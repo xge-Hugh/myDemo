@@ -1,0 +1,324 @@
+SQL事务语句：
+
+-- 变更结尾符号';'->'$$' 
+DELIMITER $$ 
+-- 如果之前存在就删除 
+DROP PROCEDURE IF EXISTS my_process123; 
+-- 创建名为my_process123的存储过程 
+CREATE PROCEDURE my_process123() 
+BEGIN 
+
+    -- 声明变量存储错误信息
+    DECLARE error_code CHAR(5) DEFAULT '00000';
+    DECLARE error_message TEXT;
+
+	-- 异常处理：出现异常就回滚 
+	DECLARE EXIT HANDLER FOR SQLEXCEPTION 
+	BEGIN 
+	  -- 获取错误信息
+    GET DIAGNOSTICS CONDITION 1
+        error_code = MYSQL_ERRNO,
+        error_message = MESSAGE_TEXT;
+	
+		ROLLBACK; 
+		-- 重新抛出错误，让调用者能看到具体错误
+    RESIGNAL SET MESSAGE_TEXT = error_message;
+	END;
+
+	START TRANSACTION; 
+
+	{待测试SQL}
+
+	ROLLBACK; 
+
+-- 以$$作为结束 
+END$$ 
+-- 恢复分号结束符 
+DELIMITER ; 
+-- 调用存储过程 
+CALL my_process123(); 
+-- 删除临时的存储过程 
+DROP PROCEDURE my_process123;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+继续针对xmind对系统进行排查
+店出表没有什么问题，或许考虑把夏志伟改为夏兴（优先度低）
+计划数据一览->跨境贸易的导入模板和生成模板：xlsx无法打开，提示扩展名有问题，具体原因带排查
+销售计划的报表似乎没有和sys_user同步（有些人名还保持原状），考虑脱敏？（优先度低）
+跨境月报详情里的tab和导出的报表中sheet Name没有脱敏（似乎与前端的代码逻辑有关?同时还可能与计划数据的模板无法打开有关待确认）（优先度高）
+代理商库存中心-零售端数据商品名和品牌都没脱敏，而且查询延迟高（数据量大导致？），如何优化速度？（优先度低）fts_sales_in_history、fts_sales_inventory_history、fts_sales_out都未脱敏（如此大数据量需要放到最后，否则会把整个数据库锁住）
+消息中心导出的消息模板，模板内容说今天的FTS实时库存需要更改，貌似可以直接编辑后更改为ABeam（优先度中）
+开发设置的Online报表配置中将鲲驰下单代理商改为鲲*下单代理商吗（待确认）
+系统监控的定时任务，描述（佳之兴还没有脱敏，待确认）
+
+费控管理->我的申请->详情->费用明细中，有关代理商部分还没有脱敏，展开排查
+下一步：已知当前系统是基于activti的的工作流（想到这里的时候大脑自动浮现了Bruce对此知之甚少的场景，显然我认为他不如我，并以这种差距沾沾自喜。首先这是事实?他真的一点也不了解？其次我了解的又有多少呢？还是说只知道个名字？我能独立在项目里集成新版工作流吗？还是最终还得求助他人？我的目的是自我提升还是炫耀？觉得自己能做到并想象被夸奖是否是一种过于乐观的预期？）那么首先去看一看数据库里有没有带相关关键字（bpm、activiti、verificationDetail等）的数据库表，没有的话，去调查一下activiti的库表组成，找到bpm的代理商是在哪里存着的。
+act_hi_comment表中出现了许多fts开头的字段值(USER_ID、MESSAGE_)，act_hi_identitylink(USER_ID),act_hi_procinst,act_ru_identitylink，act_ru_variable,sys_announcement等表需要确定影响范围和脱敏的必要性.
+根据人名中出现了陈七等，可以确定并没有从sys_user表里拿数据只是示例（影响的应该是新数据，对历史数据无影响）
+目前可以确认如果创建新申请，出现的代理商名称是已经脱敏过的，问题在于不知道历史数据存放在哪里。
+下一步根据代码流api进行确认（F12点击按钮不出现请求，静态页面？）。根据前端代码进行查看确认
+在前端的Demo中找到了有关费控申请的相关代码，相关数据是通过前端代码写的而不是从后端调用的，所以找不到。那么这部分的脱敏只需要修改前端的表单数据即可（感觉有些惊讶，甚至被欺骗的感觉，居然是静态代码写的？但是这一点与当前聚焦目标无关）
+下一步，尝试创建新申请，观察是否能正常使用申请功能（不行，从结论推断当前系统的工作流可能仅针对于订单的审批，而对于OA等尚未开发完成)
+
+新想法：人名脱敏中可以针对营业窗口新增张三李四王五，销售总监-赵六和陈七，对于VP等采用姓+总等比较好？
+
+
+费控管理的促销申请中下单代理商的模态框没有数据（结果为零），展开排查
+下一步：看一下对应的report sql是怎么写的；在MYSQL里执行一下试试看能否正常工作；
+去掉WHERE子句可以正常工作，可能是条件的问题？下一步查看a.total_code的含义（出现了自己解决问题洋洋得意，开始构思被夸奖的场景，解决办法：不要压念，使用注意力锚定，聚焦脚底；同时这真的是什么了不起的事情吗？我做这个是为了被夸奖还是为了学习为什么出错的原理从而积累经验？）
+total_code 以C999开头，似乎类似于仓位？而'#{sys_user_code}'这个类似于变量？与sys_user等表有关？（推测该查询条件类似于一种鉴权）下一步：查看jeecg onlreport中关于参数的定义，看看与其的关系（查明是系统变量表达式，貌似是sys_user表的username（当前登录用户登录账号）？）；检查sys_user表中关于code的字段（没有类似的code字段，可能就是显示为空的原因？）；调查一下report调用的时候有没有请求，看一下该变量的值
+总结：该功能是为了给当前登录的代理商进行促销申请，而管理员并非是特定的C999、C8888、C919代理商所有显示为空（虽然想修改为管理员可以无视该条件，但是与当前聚焦目标无关，不管它，继续排查！！！）
+
+有关前端请求的t=1760927102是否是时间戳（不会随时区而改变）？
+
+FtsInventoryMapper的updateFrozenInventoryAll这个方法接口和xml映射没有匹配上，接口定义的是void updateFrozenInventoryAll();
+而xml里却是<select id="updateFrozenInventoryAll" statementType="CALLABLE">,显示的是select语句，并且没有调用存储过程。
+当然并没有usage，推测已被弃用
+
+菜单管理在数据库改完后再修改，通讯录对应哪张表还不知道(可能就是sys_user)
+针对两条特殊记录FTS_WMS_S和FTS_WMS_N修改为AB_WMS_S和AB_WMS_N
+
+sysuser:
+username realname  phone work_no update_by 
+
+sys_sales_organization:
+customer_name sales_director sales_charge vp order_audit
+
+山口大辅-》张山 杉本明穗-》张衫 能代浩美-》王浩美
+异常数据：ab00043 张瑜的手机号有12位，所以这里手动脱敏
+C10U2700099的销售大区记录营业窗口 ab00099不存在
+
+
+START TRANSACTION;
+
+-- 1.1 更新username (fts→ab)
+UPDATE sys_user 
+SET username = REPLACE(username, 'fts', 'ab')
+WHERE username LIKE 'fts%';
+
+-- 1.2 更新realname - 姓夏的改为夏兴
+UPDATE sys_user 
+SET realname = '夏兴'
+WHERE realname LIKE '夏%';
+
+-- 1.3 更新phone字段 (保留前3后4，中间用****)
+UPDATE sys_user 
+SET phone = CONCAT(
+    LEFT(phone, 3), 
+    '****', 
+    RIGHT(phone, 4)
+)
+WHERE LENGTH(phone) = 11; -- 假设手机号都是11位
+
+-- 1.4 更新work_no (与username保持一致)
+UPDATE sys_user 
+SET work_no = username 
+WHERE username LIKE 'ab%' AND work_no LIKE 'fts%';
+
+-- 检查更新结果
+SELECT COUNT(*) as 用户更新数 FROM sys_user WHERE username LIKE 'ab%';
+SELECT realname, COUNT(*) FROM sys_user GROUP BY realname HAVING realname LIKE '夏%';
+
+-- 2.1 更新customer_name (关联fts_customer表)
+UPDATE fts_sales_organization so
+INNER JOIN fts_customer fc ON so.customer_code = fc.customer_code
+SET so.customer_name = fc.customer_name
+WHERE fc.customer_name IS NOT NULL;
+
+-- 2.2 更新关联用户字段 (fts→ab)
+UPDATE fts_sales_organization 
+SET 
+    sales_director = REPLACE(sales_director, 'fts', 'ab'),
+    sales_charge = REPLACE(sales_charge, 'fts', 'ab'), 
+    vp = REPLACE(vp, 'fts', 'ab'),
+    order_audit = REPLACE(order_audit, 'fts', 'ab')
+WHERE sales_director LIKE 'fts%' 
+   OR sales_charge LIKE 'fts%' 
+   OR vp LIKE 'fts%' 
+   OR order_audit LIKE 'fts%';
+
+COMMIT;
+
+SQL WHERE等于多个值用WHERE IN ('','',……)
+
+部门 ABeam
+用户表 
+在出货渠道表中S9开头的代理商已经被脱敏可以直接套用
+对于销售计划管理的所有
+菜单路径修改后有些菜单访问失效（因为在代码超链接里写死了
+
+菜单修改：
+START TRANSACTION;
+
+-- 查询需要修改的菜单路径
+SELECT id, name, url 
+FROM sys_permission 
+WHERE url LIKE '%fts%' OR url LIKE '%Fts%';
+
+-- 菜单路径脱敏
+UPDATE sys_permission 
+SET 
+    -- 替换路径中的 /fts/ 为 /abeam/
+    url = REPLACE(url, '/fts/', '/abeam/'),
+    -- 替换路径中的 Fts 为 AB
+    url = REPLACE(url, 'Fts', 'AB'),
+		url = REPLACE(url, '/fts','ab')
+WHERE url LIKE '%/fts/%' OR url LIKE '%Fts%';
+
+UPDATE sys_permission
+SET 
+    -- 替换名字中的FTS为ABeam
+    name = REPLACE(name, 'FTS', 'ABeam')
+WHERE name LIKE 'FTS%';
+
+
+-- 验证更新结果
+SELECT *
+FROM sys_permission
+ORDER BY url;
+
+COMMIT
+
+-- 如果存在同名存储过程，先删除（避免重复创建报错）
+DROP PROCEDURE IF EXISTS batch_update_discount;
+
+-- 创建存储过程
+DELIMITER $$
+CREATE PROCEDURE batch_update_discount()
+BEGIN
+    DECLARE v_total_records INT DEFAULT 0;
+    DECLARE v_batch_size INT DEFAULT 10000;
+    DECLARE v_offset INT DEFAULT 0;
+    DECLARE v_done INT DEFAULT 0;
+    
+    -- 1. 创建临时表存储映射关系
+    DROP TEMPORARY TABLE IF EXISTS temp_product_mapping;
+    CREATE TEMPORARY TABLE temp_product_mapping AS
+    SELECT d.id as discount_id, p.product_name_cn
+    FROM fts_discount d
+    INNER JOIN fts_product p ON d.product_code = p.product_number
+    WHERE p.product_name_cn IS NOT NULL;
+    
+    -- 2. 为临时表创建索引
+    CREATE INDEX idx_temp_product ON temp_product_mapping(discount_id);
+    
+    -- 3. 获取总记录数
+    SELECT COUNT(*) INTO v_total_records FROM temp_product_mapping;
+    
+    -- 4. 分批更新产品名称
+    SET v_offset = 0;
+    WHILE v_offset < v_total_records DO
+        UPDATE fts_discount d
+        INNER JOIN (
+            SELECT discount_id, product_name_cn 
+            FROM temp_product_mapping 
+            ORDER BY discount_id 
+            LIMIT v_offset, v_batch_size
+        ) tmp ON d.id = tmp.discount_id
+        SET d.product_name = tmp.product_name_cn;
+        
+        SET v_offset = v_offset + v_batch_size;
+        
+        -- 每批提交一次
+        COMMIT;
+        
+        -- 可选：添加延迟
+        DO SLEEP(0.1);
+    END WHILE;
+    
+    -- 5. 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS temp_product_mapping;
+    
+END $$
+DELIMITER ;
+
+-- 执行存储过程
+CALL batch_update_discount();
+
+-- 完成后删除存储过程
+DROP PROCEDURE batch_update_discount;
+
+-- 如果存在同名存储过程，先删除（避免重复创建报错）
+DROP PROCEDURE IF EXISTS batch_update_customer_name;
+
+-- 创建存储过程
+DELIMITER $$
+CREATE PROCEDURE batch_update_customer_name()
+BEGIN
+    DECLARE v_total_records INT DEFAULT 0;
+    DECLARE v_batch_size INT DEFAULT 10000;
+    DECLARE v_offset INT DEFAULT 0;
+    
+    -- 1. 创建临时表存储客户映射关系
+    DROP TEMPORARY TABLE IF EXISTS temp_customer_mapping;
+    CREATE TEMPORARY TABLE temp_customer_mapping AS  
+    SELECT d.id as discount_id, c.customer_name
+    FROM fts_discount d
+    INNER JOIN fts_customer c ON d.customer_code = c.customer_code
+    WHERE c.customer_name IS NOT NULL;
+    
+    -- 2. 为临时表创建索引
+    CREATE INDEX idx_temp_customer ON temp_customer_mapping(discount_id);
+    
+    -- 3. 获取总记录数
+    SELECT COUNT(*) INTO v_total_records FROM temp_customer_mapping;
+    
+    -- 4. 分批更新代理商名称
+    SET v_offset = 0;
+    WHILE v_offset < v_total_records DO
+        UPDATE fts_discount d
+        INNER JOIN (
+            SELECT discount_id, customer_name 
+            FROM temp_customer_mapping 
+            ORDER BY discount_id 
+            LIMIT v_offset, v_batch_size
+        ) tmp ON d.id = tmp.discount_id
+        SET d.customer_name = tmp.customer_name;
+        
+        SET v_offset = v_offset + v_batch_size;
+        
+        -- 每批提交一次
+        COMMIT;
+        
+        -- 可选：添加延迟
+        DO SLEEP(0.1);
+    END WHILE;
+    
+    -- 5. 清理临时表
+    DROP TEMPORARY TABLE IF EXISTS temp_customer_mapping;
+    
+END $$
+DELIMITER ;
+
+-- 执行存储过程
+CALL batch_update_customer_name();
+
+-- 完成后删除存储过程
+DROP PROCEDURE batch_update_customer_name;
+
+sys_user造几个人名（张三、李四。。。）
