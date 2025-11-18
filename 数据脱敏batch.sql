@@ -3,7 +3,7 @@ update fts_product set product_name_cn = concat('艾宾 ',SUBSTR(product_name_cn
 	,product_name_en = concat('abeam ',SUBSTR(product_name_en,locate(' ',product_name_en),LENGTH(product_name_en)))
 	,brand_name = concat('ABeam ',left(brand_name,2))
 
-	    -- 插入一条新注释
+
 
 update fts_product set product_name_cn = concat(SUBSTRING(product_name_cn, 1, CHAR_LENGTH(product_name_cn) - 3),REPEAT('*', 3))
 	,product_name_en = concat(SUBSTRING(product_name_en, 1, CHAR_LENGTH(product_name_en) - 6),REPEAT('*', 6))
