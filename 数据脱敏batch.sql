@@ -3,7 +3,7 @@ update fts_product set product_name_cn = concat('艾宾 ',SUBSTR(product_name_cn
 	,product_name_en = concat('abeam ',SUBSTR(product_name_en,locate(' ',product_name_en),LENGTH(product_name_en)))
 	,brand_name = concat('ABeam ',left(brand_name,2))
 
-
+-- 插入新注释
 
 update fts_product set product_name_cn = concat(SUBSTRING(product_name_cn, 1, CHAR_LENGTH(product_name_cn) - 3),REPEAT('*', 3))
 	,product_name_en = concat(SUBSTRING(product_name_en, 1, CHAR_LENGTH(product_name_en) - 6),REPEAT('*', 6))
@@ -28,7 +28,7 @@ set A.product_name = B.product_name,A.product_name_en = B.product_name_en,A.bran
 update fts_customer_order_detail_v2 A
 inner join vw_fts_product_all B on A.product_oracle_code = B.product_oracle_code
 set A.product_name = B.product_name,A.product_name_en = B.product_name_en,A.brand_name = B.brand_name
-
+-- 插入新注释
 
 -- 销售计划代理商
 update fts_demension_item set demension_item_name = concat(left(demension_item_name,2),'**',SUBSTR(demension_item_name from 5 for LENGTH(demension_item_name)))
